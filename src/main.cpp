@@ -1,59 +1,61 @@
-#include <glad/glad.h>  // Include GLAD before GLFW
-#include <GLFW/glfw3.h> 
+// main.cpp
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+#include "renderer.h"
+#include "camera.h"
 #include <iostream>
-#include <vector>
-#include <string>
 
-const unsigned int WIDTH = 800;
-const unsigned int HEIGHT = 600;
-
-// Vertex shader source code
+// Simple vertex shader for fullscreen quad
 const char* vertexShaderSource = R"(
-    #version 330 core
-    layout (location = 0) in vec3 aPos;
-    layout (location = 1) in vec2 aTexCoord;
-    out vec2 TexCoord;
-    void main() {
-        gl_Position = vec4(aPos, 1.0);
-        TexCoord = aTexCoord;
-    }
+#version 330 core
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec2 aTexCoord;
+out vec2 TexCoord;
+
+void main() {
+    gl_Position = vec4(aPos, 1.0);
+    TexCoord = aTexCoord;
+}
 )";
 
-// Fragment shader source code
+// Simple fragment shader to display the texture
 const char* fragmentShaderSource = R"(
-    #version 330 core
-    in vec2 TexCoord;
-    out vec4 FragColor;
-    uniform sampler2D screenTexture;
-    void main() {
-        FragColor = texture(screenTexture, TexCoord);
-    }
+#version 330 core
+in vec2 TexCoord;
+out vec4 FragColor;
+uniform sampler2D screenTexture;
+
+void main() {
+    FragColor = texture(screenTexture, TexCoord);
+}
 )";
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
-    glViewport(0, 0, width, height);
-}
+// Global variables for camera control
+float lastX = 400.0f, lastY = 300.0f;
+bool firstMouse = true;
+Camera camera(glm::vec3(0.0f, 0.0f, 5.0f));
 
-void processInput(GLFWwindow* window) {
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
-}
-
-// Shader compilation check
-void checkShaderCompilation(unsigned int shader) {
-    int success;
-    char infoLog[512];
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        glGetShaderInfoLog(shader, 512, NULL, infoLog);
-        std::cerr << "Shader compilation failed:\n" << infoLog << std::endl;
+// Camera control callback
+void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
+    if (firstMouse) {
+        lastX = xpos;
+        lastY = ypos;
+        firstMouse = false;
+        return;
     }
+
+    float xoffset = xpos - lastX;
+    float yoffset = lastY - ypos;
+    lastX = xpos;
+    lastY = ypos;
+
+    camera.rotate(xoffset, yoffset);
 }
 
 int main() {
-    // Initialize GLFW
+    // Initialize GLFW and OpenGL
     if (!glfwInit()) {
-        std::cerr << "Failed to initialize GLFW\n";
+        std::cerr << "Failed to initialize GLFW" << std::endl;
         return -1;
     }
 
@@ -61,33 +63,34 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
+    const int WIDTH = 800;
+    const int HEIGHT = 600;
     GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "Ray Tracer", NULL, NULL);
     if (!window) {
-        std::cerr << "Failed to create GLFW window\n";
+        std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
         return -1;
     }
-    glfwMakeContextCurrent(window);
 
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-        std::cerr << "Failed to initialize GLAD\n";
+    glfwMakeContextCurrent(window);
+    glfwSetCursorPosCallback(window, mouse_callback);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    if (glewInit() != GLEW_OK) {
+        std::cerr << "Failed to initialize GLEW" << std::endl;
         return -1;
     }
 
-    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-
     // Create and compile shaders
-    unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
     glCompileShader(vertexShader);
-    checkShaderCompilation(vertexShader);
 
-    unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
     glCompileShader(fragmentShader);
-    checkShaderCompilation(fragmentShader);
 
-    unsigned int shaderProgram = glCreateProgram();
+    GLuint shaderProgram = glCreateProgram();
     glAttachShader(shaderProgram, vertexShader);
     glAttachShader(shaderProgram, fragmentShader);
     glLinkProgram(shaderProgram);
@@ -95,74 +98,87 @@ int main() {
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
-    // Set up vertex data for a quad that fills the screen
-    float vertices[] = {
+    // Setup fullscreen quad
+    float quadVertices[] = {
         // positions        // texture coords
-        -1.0f,  1.0f, 0.0f,  0.0f, 1.0f,
-        -1.0f, -1.0f, 0.0f,  0.0f, 0.0f,
-         1.0f, -1.0f, 0.0f,  1.0f, 0.0f,
-         1.0f,  1.0f, 0.0f,  1.0f, 1.0f
-    };
-    unsigned int indices[] = {
-        0, 1, 2,
-        0, 2, 3
+        -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+        -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+         1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+         1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
     };
 
-    // Set up vertex buffer and vertex array objects
-    unsigned int VBO, VAO, EBO;
+    GLuint VAO, VBO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
-    glGenBuffers(1, &EBO);
-
     glBindVertexArray(VAO);
-
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
 
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
-    // Position attribute
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-    // Texture coordinate attribute
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
-    // Create texture for the pixel data
-    unsigned int texture;
+    // Setup texture for ray traced output
+    GLuint texture;
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, WIDTH, HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 
-    // Pixel data buffer
-    std::vector<float> pixels(WIDTH * HEIGHT * 3);
+    // Initialize renderer and scene
+    Renderer renderer(WIDTH, HEIGHT);
+    
+    // Add some example objects
+    renderer.addSphere(Sphere(glm::vec3(0.0f, 0.0f, -1.0f), 0.5f, glm::vec3(1.0f, 0.2f, 0.2f)));
+    renderer.addSphere(Sphere(glm::vec3(-1.0f, 0.0f, -1.0f), 0.5f, glm::vec3(0.2f, 1.0f, 0.2f)));
+    renderer.addSphere(Sphere(glm::vec3(1.0f, 0.0f, -1.0f), 0.5f, glm::vec3(0.2f, 0.2f, 1.0f)));
+    renderer.addSphere(Sphere(glm::vec3(0.0f, -100.5f, -1.0f), 100.0f, glm::vec3(0.8f)));
 
+    // Add lights
+    renderer.addLight(Light(glm::vec3(2.0f, 2.0f, 1.0f), glm::vec3(1.0f), 1.0f));
+    renderer.addLight(Light(glm::vec3(-2.0f, 2.0f, 1.0f), glm::vec3(0.5f), 0.5f));
+
+    float lastFrame = 0.0f;
+
+    // Main render loop
     while (!glfwWindowShouldClose(window)) {
-        processInput(window);
+        float currentFrame = glfwGetTime();
+        float deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
 
-        // Update pixel data (generate gradient)
-        for (int y = 0; y < HEIGHT; ++y) {
-            for (int x = 0; x < WIDTH; ++x) {
-                int pixelIndex = (y * WIDTH + x) * 3;
-                pixels[pixelIndex + 0] = static_cast<float>(x) / WIDTH;    // Red
-                pixels[pixelIndex + 1] = static_cast<float>(y) / HEIGHT;   // Green
-                pixels[pixelIndex + 2] = 0.2f;                            // Blue
-            }
-        }
+        // Handle input
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, true);
 
-        // Update texture with new pixel data
+        // Camera movement
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            camera.moveForward(deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            camera.moveBackward(deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            camera.moveLeft(deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            camera.moveRight(deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+            camera.moveUp(deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
+            camera.moveDown(deltaTime);
+
+        // Ray trace the scene
+        renderer.render(camera);
+
+        // Update texture with ray traced result
         glBindTexture(GL_TEXTURE_2D, texture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, WIDTH, HEIGHT, 0, GL_RGB, GL_FLOAT, pixels.data());
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, WIDTH, HEIGHT, GL_RGB, GL_UNSIGNED_BYTE, 
+                       renderer.getImageData().data());
 
-        glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+        // Clear and draw fullscreen quad
         glClear(GL_COLOR_BUFFER_BIT);
-
-        // Render quad with texture
         glUseProgram(shaderProgram);
         glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -171,7 +187,6 @@ int main() {
     // Cleanup
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
-    glDeleteBuffers(1, &EBO);
     glDeleteProgram(shaderProgram);
     glDeleteTextures(1, &texture);
 
